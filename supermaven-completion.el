@@ -1,114 +1,202 @@
-;;; supermaven-completion.el --- Supermaven completion management -*- lexical-binding: t; -*-
+;;; supermaven-completion.el --- Improved completion handling -*- lexical-binding: t; -*-
 
 ;;; Commentary:
 
-;; This file contains functions for managing Supermaven completions and suggestions.
+;; Core completion functionality for Supermaven.
 
 ;;; Code:
 
+(require 'cl-lib)
+(require 'supermaven-state)
+(require 'supermaven-logger)
 (require 'supermaven-config)
-(require 'supermaven-util)
 
+;; Variables
 (defvar-local supermaven--current-overlay nil
-  "Overlay for displaying the current suggestion.")
+  "Current completion overlay.")
 
-(defvar supermaven--completion-state (make-hash-table :test 'equal)
-  "Hash table to store completion states.")
+(defconst supermaven--completion-chunk-size 1000
+  "Maximum size of text to process in one chunk.")
 
-(defun supermaven--display-suggestion (suggestion)
-  "Display SUGGESTION as an overlay."
-  (supermaven--clear-suggestion)
-  (let ((ov (make-overlay (point) (point))))
-    (overlay-put ov 'after-string (propertize suggestion 'face 'shadow))
-    (setq supermaven--current-overlay ov)))
+(defvar-local supermaven--polling-timer nil
+  "Timer for polling completion updates.")
 
-(defun supermaven--clear-suggestion ()
-  "Clear the current suggestion overlay."
+(defvar-local supermaven--last-prefix nil
+  "Last completion prefix.")
+
+(defvar-local supermaven--completion-cache (make-hash-table :test 'equal)
+  "Cache for completions.")
+
+(defclass supermaven-completion-context ()
+  ((buffer :initarg :buffer
+           :type buffer
+           :documentation "Buffer being completed.")
+   (prefix :initarg :prefix
+           :type string
+           :documentation "Completion prefix.")
+   (point :initarg :point
+          :type number
+          :documentation "Point position.")
+   (line-before :initarg :line-before
+                :type string
+                :documentation "Text before point.")
+   (line-after :initarg :line-after
+               :type string
+               :documentation "Text after point.")
+   (bounds :initarg :bounds
+           :type cons
+           :documentation "Completion bounds."))
+  "Context for completion operation.")
+
+(defclass supermaven-completion-item ()
+  ((kind :initarg :kind
+         :type string)
+   (text :initarg :text
+         :type string))
+  "A single completion item.")
+
+;; Core functions
+(defun supermaven--initialize-completion ()
+  "Initialize completion system."
+  (add-hook 'completion-at-point-functions #'supermaven-completion-at-point nil t)
+  (when (featurep 'company)
+    (supermaven--setup-company)))
+
+(defun supermaven--setup-company ()
+  "Set up company-mode integration."
+  (with-eval-after-load 'company
+    (add-to-list 'company-backends 'company-supermaven)))
+
+(defun supermaven--create-completion-context ()
+  "Create completion context at point."
+  (let* ((buf (current-buffer))
+         (pos (point))
+         (bounds (supermaven--completion-bounds))
+         (line (buffer-substring-no-properties
+                (line-beginning-position)
+                (line-end-position)))
+         (prefix-start (car bounds))
+         (line-before (substring line 0 (- pos (line-beginning-position))))
+         (line-after (substring line (- pos (line-beginning-position)))))
+    (make-instance 'supermaven-completion-context
+                  :buffer buf
+                  :prefix (buffer-substring-no-properties prefix-start pos)
+                  :point pos
+                  :line-before line-before
+                  :line-after line-after
+                  :bounds bounds)))
+
+(defun supermaven--completion-bounds ()
+  "Get bounds of thing to complete."
+  (let ((bounds (bounds-of-thing-at-point 'symbol)))
+    (cons (or (car bounds) (point))
+          (or (cdr bounds) (point)))))
+
+(defun supermaven--display-completion (text &optional after)
+  "Display completion TEXT with optional AFTER text."
+  (supermaven--clear-completion)
+  (when (and text (not (string-empty-p text)))
+    (let* ((pos (point))
+           (ov (make-overlay pos pos nil t nil)))
+      (overlay-put ov 'priority 100)
+      (overlay-put ov 'supermaven t)
+      (overlay-put ov 'after-string
+                   (propertize (if after
+                                  (concat text after)
+                                text)
+                              'face 'shadow))
+      (setq supermaven--current-overlay ov))))
+
+(defun supermaven--clear-completion ()
+  "Clear current completion."
   (when supermaven--current-overlay
     (delete-overlay supermaven--current-overlay)
     (setq supermaven--current-overlay nil)))
 
-(defun supermaven-accept-suggestion ()
-  "Accept the current suggestion."
+(defun supermaven--cache-completion (key completion)
+  "Cache COMPLETION for KEY."
+  (puthash key completion supermaven--completion-cache))
+
+(defun supermaven--get-cached-completion (key)
+  "Get cached completion for KEY."
+  (gethash key supermaven--completion-cache))
+
+(defun supermaven--clear-completion-cache ()
+  "Clear completion cache."
+  (clrhash supermaven--completion-cache))
+
+;; Interactive commands
+(defun supermaven-accept-completion ()
+  "Accept current completion."
   (interactive)
-  (when supermaven--current-overlay
-    (let ((suggestion (overlay-get supermaven--current-overlay 'after-string)))
-      (delete-overlay supermaven--current-overlay)
-      (insert suggestion))))
+  (when-let* ((ov supermaven--current-overlay)
+              (text (overlay-get ov 'after-string)))
+    (supermaven--clear-completion)
+    (insert text)))
 
-(defun supermaven-clear-suggestion ()
-  "Clear the current suggestion."
+(defun supermaven-accept-word ()
+  "Accept next word of completion."
   (interactive)
-  (supermaven--clear-suggestion))
+  (when-let* ((ov supermaven--current-overlay)
+              (text (overlay-get ov 'after-string))
+              (word (supermaven--to-next-word text)))
+    (supermaven--clear-completion)
+    (insert word)))
 
-(defun supermaven--update-completion-state (state-id items)
-  "Update completion state with STATE-ID and ITEMS."
-  (puthash state-id items supermaven--completion-state)
-  (supermaven--process-completion (gethash state-id supermaven--completion-state)))
+(defun supermaven-clear-completion ()
+  "Clear current completion."
+  (interactive)
+  (supermaven--clear-completion))
 
-(defun supermaven--process-completion (items)
-  "Process completion ITEMS received from Supermaven."
-  (when items
-    (let* ((first-item (aref items 0))
-           (text-edit (cdr (assoc 'textEdit first-item)))
-           (new-text (cdr (assoc 'newText text-edit))))
-      (when new-text
-        (supermaven--display-suggestion new-text)))))
+;; Company backend
+(defun company-supermaven (command &optional arg &rest _ignored)
+  "Company backend for Supermaven."
+  (interactive (list 'interactive))
+  (cl-case command
+    (interactive (company-begin-backend 'company-supermaven))
+    (prefix (and supermaven-mode
+                 (not (company-in-string-or-comment))
+                 (not (supermaven--should-ignore-buffer))
+                 (let ((bounds (supermaven--completion-bounds)))
+                   (buffer-substring-no-properties (car bounds) (point)))))
+    (candidates
+     (when-let ((completion (supermaven--get-completion-text)))
+       (list completion)))
+    (sorted t)
+    (kind 'text)
+    (annotation "<Supermaven>")
+    (no-cache t)
+    (require-match 'never)
+    (duplicates nil)
+    (meta "AI-powered completion")))
 
-(defun supermaven--get-buffer-text ()
-  "Get the current buffer text."
-  (buffer-substring-no-properties (point-min) (point-max)))
+(defun supermaven--poll-completions ()
+  "Poll for completion updates."
+  (when supermaven--polling-timer
+    (cancel-timer supermaven--polling-timer))
+  (setq supermaven--polling-timer
+        (run-with-timer 0 0.025 #'supermaven--poll-once
+                       (current-buffer))))
 
-(defun supermaven--get-cursor-prefix ()
-  "Get the text before the cursor."
-  (buffer-substring-no-properties (point-min) (point)))
+(defun supermaven--stop-polling ()
+  "Stop polling for completions."
+  (when supermaven--polling-timer
+    (cancel-timer supermaven--polling-timer)
+    (setq supermaven--polling-timer nil)))
 
-(defun supermaven--get-cursor-suffix ()
-  "Get the text after the cursor."
-  (buffer-substring-no-properties (point) (point-max)))
+(defun supermaven--poll-once (buffer)
+  "Poll once for completions in BUFFER."
+  (when (and (buffer-live-p buffer)
+             (eq buffer (current-buffer)))
+    (supermaven--update-completion)))
 
-(defun supermaven--send-file-update ()
-  "Send a file update message to Supermaven."
-  (when-let ((file-name (buffer-file-name)))
-    (supermaven--send-message
-     `((kind . "file_update")
-       (path . ,file-name)
-       (content . ,(supermaven--get-buffer-text))))))
 
-(defun supermaven--send-cursor-update ()
-  "Send a cursor update message to Supermaven."
-  (when-let ((file-name (buffer-file-name)))
-    (supermaven--send-message
-     `((kind . "cursor_update")
-       (path . ,file-name)
-       (offset . ,(1- (point)))))))
-
-(defun supermaven--on-change (&rest _)
-  "Handle buffer changes."
-  (when supermaven-mode
-    (supermaven--send-file-update)
-    (supermaven--send-cursor-update)))
-
-(defun supermaven--on-post-command ()
-  "Handle post-command events."
-  (when supermaven-mode
-    (supermaven--send-cursor-update)))
-
-(define-minor-mode supermaven-mode
-  "Minor mode for Supermaven."
-  :lighter " Supermaven"
-  :keymap (let ((map (make-sparse-keymap)))
-            (define-key map (kbd "TAB") #'supermaven-accept-suggestion)
-            (define-key map (kbd "C-]") #'supermaven-clear-suggestion)
-            map)
-  (if supermaven-mode
-      (progn
-        (add-hook 'after-change-functions #'supermaven--on-change nil t)
-        (add-hook 'post-command-hook #'supermaven--on-post-command nil t)
-        (supermaven-start))
-    (remove-hook 'after-change-functions #'supermaven--on-change t)
-    (remove-hook 'post-command-hook #'supermaven--on-post-command t)
-    (supermaven-stop)))
+;; Cleanup
+(defun supermaven--cleanup-completion ()
+  "Clean up completion system."
+  (supermaven--clear-completion)
+  (supermaven--clear-completion-cache)
+  (setq supermaven--last-prefix nil))
 
 (provide 'supermaven-completion)
 

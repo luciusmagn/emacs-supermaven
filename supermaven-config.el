@@ -11,6 +11,11 @@
   :group 'completion
   :prefix "supermaven-")
 
+(defcustom supermaven-auto-start t
+  "Whether to automatically start Supermaven when enabling the mode."
+  :type 'boolean
+  :group 'supermaven)
+
 (defcustom supermaven-ignore-filetypes '()
   "List of filetypes to ignore."
   :type '(repeat string)
@@ -37,11 +42,21 @@
 (defcustom supermaven-log-level 'info
   "Log level for Supermaven."
   :type '(choice (const :tag "Off" off)
-          (const :tag "Error" error)
-          (const :tag "Warn" warn)
-          (const :tag "Info" info)
-          (const :tag "Debug" debug)
-          (const :tag "Trace" trace))
+                (const :tag "Error" error)
+                (const :tag "Warn" warn)
+                (const :tag "Info" info)
+                (const :tag "Debug" debug)
+                (const :tag "Trace" trace))
+  :group 'supermaven)
+
+(defcustom supermaven-suggestion-color "#ffffff"
+  "Color for completion suggestions."
+  :type 'string
+  :group 'supermaven)
+
+(defcustom supermaven-suggestion-face 'shadow
+  "Face to use for completion suggestions."
+  :type 'face
   :group 'supermaven)
 
 (defvar supermaven-dust-strings nil
@@ -49,6 +64,54 @@
 
 (defvar supermaven-activate-url nil
   "URL for activating Supermaven Pro.")
+
+(defvar supermaven--current-state-id 0
+  "Current state ID for completions.")
+
+(defvar supermaven--state-map (make-hash-table :test 'equal)
+  "Map of state IDs to their completion states.")
+
+(defvar supermaven--changed-documents (make-hash-table :test 'equal)
+  "Map of changed documents.")
+
+;; Default state initialized
+(put 'supermaven-mode 'globalized-minor-mode t)
+(setq-default supermaven-mode nil)
+
+;; Function to reset configuration to defaults
+(defun supermaven-reset-config ()
+  "Reset Supermaven configuration to defaults."
+  (interactive)
+  (setq supermaven-auto-start t
+        supermaven-ignore-filetypes '()
+        supermaven-disable-inline-completion nil
+        supermaven-keymaps '((accept-suggestion . "TAB")
+                            (clear-suggestion . "C-]")
+                            (accept-word . "C-j"))
+        supermaven-condition (lambda () nil)
+        supermaven-log-level 'info
+        supermaven-suggestion-color "#ffffff"
+        supermaven-suggestion-face 'shadow))
+
+;; Configuration verification
+(defun supermaven-verify-config ()
+  "Verify Supermaven configuration is valid."
+  (interactive)
+  (let ((issues '()))
+    (unless (member supermaven-log-level '(off error warn info debug trace))
+      (push "Invalid log level" issues))
+    (unless (functionp supermaven-condition)
+      (push "Invalid condition function" issues))
+    (unless (and (listp supermaven-keymaps)
+                 (assq 'accept-suggestion supermaven-keymaps)
+                 (assq 'clear-suggestion supermaven-keymaps)
+                 (assq 'accept-word supermaven-keymaps))
+      (push "Invalid keymaps configuration" issues))
+    (if issues
+        (progn
+          (supermaven-log-error (format "Configuration issues found: %s" issues))
+          nil)
+      t)))
 
 (provide 'supermaven-config)
 
