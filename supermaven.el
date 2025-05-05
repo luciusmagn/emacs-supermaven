@@ -35,18 +35,38 @@
                 #'supermaven-accept-completion)
     (define-key map (kbd (cdr (assq 'clear-suggestion supermaven-keymaps)))
                 #'supermaven-clear-completion)
+    (define-key map (kbd (cdr (assq 'accept-word supermaven-keymaps)))
+                #'supermaven-accept-word)
     map)
   "Keymap for Supermaven mode.")
 
-;; Core functions
+;; Add missing functions for handling completions
+(defun supermaven--clear-completion ()
+  "Clear the current completion."
+  (when supermaven--current-overlay
+    (delete-overlay supermaven--current-overlay)
+    (setq supermaven--current-overlay nil)))
+
+;; Add proper initialization for document handling
 (defun supermaven--initialize ()
   "Initialize Supermaven if not already initialized."
   (unless supermaven--initialized
     (supermaven--ensure-binary)
-    (supermaven--initialize-process-manager)
     (supermaven-state-initialize)
+    (supermaven--initialize-process-manager)
     (supermaven--initialize-completion)
+    (add-hook 'supermaven-completion-update-hook #'supermaven--handle-completion-update)
+    (setq supermaven--current-state-id 0)
     (setq supermaven--initialized t)))
+
+(defun supermaven--handle-completion-update ()
+  "Handle completion updates."
+  (when (and supermaven-mode
+             (not supermaven-disable-inline-completion))
+    (let* ((state-id (number-to-string supermaven--current-state-id))
+           (completion (supermaven-state-get-completion supermaven--state-manager state-id)))
+      (when completion
+        (supermaven--update-completion-overlay completion)))))
 
 (defun supermaven--cleanup ()
   "Clean up Supermaven resources."
@@ -96,13 +116,14 @@
 (defun supermaven-use-free ()
   "Switch to Supermaven Free version."
   (interactive)
-  (supermaven--send-message '(:kind "use_free_version")))
+  (supermaven--send-message '(:kind "use_free_version"))
+  (message "Switched to Supermaven Free version"))
 
 ;;;###autoload
 (defun supermaven-use-pro ()
   "Switch to Supermaven Pro version."
   (interactive)
-  (if-let ((url supermaven-activate-url))
+  (if-let* ((url supermaven-activate-url))
       (browse-url url)
     (supermaven-log-error "No activation URL available.")))
 
@@ -126,7 +147,7 @@
 (defun supermaven-clear-log ()
   "Clear Supermaven log buffer."
   (interactive)
-  (when-let ((buffer (get-buffer "*Supermaven Log*")))
+  (when-let* ((buffer (get-buffer "*Supermaven Log*")))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)))))
@@ -166,15 +187,15 @@
   (interactive)
   ;; Initialize
   (supermaven--initialize)
-  
+
   ;; Set up completion
   (with-eval-after-load 'company
     (supermaven--setup-company))
-  
+
   ;; Set up hooks
   (add-hook 'completion-at-point-functions
             #'supermaven-completion-at-point nil 'local)
-  
+
   ;; Start if auto-start enabled
   (when supermaven-auto-start
     (supermaven-start)))

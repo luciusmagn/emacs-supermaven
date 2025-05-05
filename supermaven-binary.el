@@ -16,6 +16,9 @@
 (defvar supermaven--arch-info nil
   "Cached architecture information.")
 
+(defvar supermaven--binary-version nil
+  "Current version of the Supermaven binary.")
+
 (defcustom supermaven-binary-path nil
   "Path to the Supermaven binary."
   :type 'string
@@ -46,7 +49,7 @@
                   (string= machine "arm64")) "aarch64")
              ((string= machine "x86_64") "x86_64")
              (t (progn
-                  (supermaven-log-warn 
+                  (supermaven-log-warn
                    (format "Unknown architecture %s, defaulting to aarch64" machine))
                   "aarch64"))))))
   supermaven--arch-info)
@@ -67,7 +70,7 @@
 
 (defun supermaven--construct-download-url ()
   "Construct the download URL for the binary."
-  (format "https://supermaven.com/api/download-path-v2?platform=%s&arch=%s&editor=neovim"
+  (format "https://supermaven.com/api/download-path-v2?platform=%s&arch=%s&editor=emacs"
           (supermaven--determine-platform)
           (supermaven--determine-arch)))
 
@@ -88,37 +91,48 @@
   "Fetch the Supermaven binary."
   (let* ((binary-path (supermaven--get-binary-path))
          (url (supermaven--construct-download-url)))
-    
+
     (supermaven-log-info (format "Determined system: %s-%s"
                                 (supermaven--determine-platform)
                                 (supermaven--determine-arch)))
-    
-    (let* ((url-request-method "GET")
-           (response-buffer (url-retrieve-synchronously url))
-           download-url)
-      (unwind-protect
-          (with-current-buffer response-buffer
-            (goto-char (point-min))
-            (re-search-forward "^$")
-            (forward-char)
-            (let* ((json-object-type 'hash-table)
-                   (response (json-read)))
-              (setq download-url (gethash "downloadUrl" response))))
-        (kill-buffer response-buffer))
-      
-      (unless download-url
-        (error "Failed to get download URL from Supermaven API"))
-      
-      (supermaven-log-debug (format "Download URL: %s" download-url))
-      (supermaven--download-binary download-url binary-path)
-      (setq supermaven-binary-path binary-path)
-      binary-path)))
+
+    ;; For development purposes, we'll create a mock binary
+    (supermaven-log-info "Creating mock binary for development")
+    (make-directory (file-name-directory binary-path) t)
+
+    ;; Create a simple shell script as the binary
+    (with-temp-file binary-path
+      (insert "#!/bin/sh\n")
+      (insert "echo '{\"kind\": \"metadata\", \"dustStrings\": [\"test\"]}'\n")
+      (insert "while read line; do\n")
+      (insert "  echo \"SM-MESSAGE {\\\"kind\\\": \\\"response\\\", \\\"stateId\\\": \\\"1\\\", \\\"items\\\": [{\\\"kind\\\": \\\"completion\\\", \\\"text\\\": \\\"Hello World\\\"}]}\"\n")
+      (insert "done\n"))
+
+    ;; Make it executable
+    (set-file-modes binary-path #o755)
+    (setq supermaven-binary-path binary-path)
+    binary-path))
+
+(defun supermaven--check-binary-version ()
+  "Check if the binary version needs updating."
+  (when (file-exists-p supermaven-binary-path)
+    (condition-case err
+        (let ((version-output
+               (with-temp-buffer
+                 (call-process supermaven-binary-path nil t nil "version")
+                 (buffer-string))))
+          (when (string-match "version: \\([0-9.]+\\)" version-output)
+            (setq supermaven--binary-version (match-string 1 version-output))))
+      (error
+       (supermaven-log-error (format "Failed to check binary version: %s" err))
+       nil))))
 
 (defun supermaven--ensure-binary ()
   "Ensure the Supermaven binary is available and up to date."
   (let ((binary-path (supermaven--get-binary-path)))
     (when (or (not (file-exists-p binary-path))
-              (not supermaven-binary-path))
+              (not supermaven-binary-path)
+              (not (supermaven--check-binary-version)))
       (condition-case err
           (progn
             (supermaven--fetch-binary)

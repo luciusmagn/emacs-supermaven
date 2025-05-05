@@ -38,14 +38,12 @@
 
 ;; Core functions
 (defun supermaven--schedule-update (change)
-  "Schedule update for CHANGE."
+  "Schedule an update based on CHANGE."
   (when supermaven--change-timer
     (cancel-timer supermaven--change-timer))
   (setq supermaven--last-change change
         supermaven--change-timer
-        (run-with-timer 0.15 nil
-                       #'supermaven--process-update
-                       (current-buffer))))
+        (run-with-idle-timer 0.5 nil #'supermaven--process-update (current-buffer))))
 
 (defun supermaven--process-update (buffer)
   "Process pending update in BUFFER."
@@ -61,22 +59,24 @@
               (content (buffer-substring-no-properties
                        (point-min) (point-max))))
     (when (< (length content) supermaven--hard-size-limit)
-      (supermaven-state-record-buffer-change
-       supermaven--state-manager
-       file-name
-       content)
-      (setq supermaven--last-change nil))))
+      (when supermaven--state-manager
+        (supermaven-state-record-buffer-change
+         supermaven--state-manager
+         file-name
+         content)
+        (supermaven--submit-state-update)
+        (setq supermaven--last-change nil)))))
 
 (defun supermaven--track-change (beg end len)
   "Track change between BEG and END with length LEN."
   (when (and supermaven-mode
+             (supermaven--process-running-p)
              (not (supermaven--should-ignore-buffer)))
-    (let ((change (make-instance 'supermaven-document-change
-                                :begin beg
-                                :end end
-                                :length len
-                                :text (buffer-substring-no-properties beg end)
-                                :time (float-time))))
+    (let ((change (list :begin beg
+                        :end end
+                        :length len
+                        :text (buffer-substring-no-properties beg end)
+                        :time (float-time))))
       (supermaven--schedule-update change))))
 
 (defun supermaven--should-ignore-buffer ()
@@ -92,12 +92,8 @@
   (add-hook 'after-change-functions #'supermaven--track-change nil t))
 
 (defun supermaven--cleanup-document-hooks ()
-  "Clean up document hooks."
-  (remove-hook 'after-change-functions #'supermaven--track-change t)
-  (when supermaven--change-timer
-    (cancel-timer supermaven--change-timer)
-    (setq supermaven--change-timer nil
-          supermaven--last-change nil)))
+  "Remove document change hooks."
+  (remove-hook 'after-change-functions #'supermaven--track-change t))
 
 (provide 'supermaven-document)
 

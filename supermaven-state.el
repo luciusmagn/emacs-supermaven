@@ -38,6 +38,10 @@
          :initform nil
          :type list
          :documentation "List of completion items.")
+   (completion :initarg :completion
+              :initform nil
+              :type (or null string)
+              :documentation "Current completion text.")
    (timestamp :initarg :timestamp
               :type number
               :documentation "When this state was created."))
@@ -81,7 +85,7 @@
 
 (cl-defmethod supermaven-state-update ((manager supermaven-state-manager) id items)
   "Update state ID with completion ITEMS."
-  (when-let ((state (supermaven-state-get manager id)))
+  (when-let* ((state (supermaven-state-get manager id)))
     (oset state items
           (append (oref state items)
                  (mapcar #'supermaven-state--convert-item items)))))
@@ -135,6 +139,32 @@
       (clrhash states)
       (clrhash changed-buffers))
     (setq supermaven--state-manager nil)))
+
+(cl-defmethod supermaven-state-update-completion ((manager supermaven-state-manager)
+                                                 state-id completion-data)
+  "Update completion for STATE-ID with COMPLETION-DATA."
+  (with-slots (states) manager
+    (let ((state (gethash state-id states)))
+      (when state
+        (oset state completion completion-data)
+        (run-hooks 'supermaven-completion-update-hook)))))
+
+(cl-defmethod supermaven-state-get-completion ((manager supermaven-state-manager) state-id)
+  "Get completion for STATE-ID."
+  (with-slots (states) manager
+    (when-let* ((state (gethash state-id states)))
+      (oref state completion))))
+
+(defvar supermaven-completion-update-hook nil
+  "Hook run when completion is updated.")
+
+(defun supermaven-state-create-id ()
+  "Create a new state ID."
+  (when supermaven--state-manager
+    (with-slots (current-id) supermaven--state-manager
+      (cl-incf current-id)
+      (setq supermaven--current-state-id current-id)
+      (number-to-string current-id))))
 
 (provide 'supermaven-state)
 

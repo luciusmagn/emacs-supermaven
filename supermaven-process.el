@@ -51,7 +51,7 @@
   "Start the Supermaven process."
   (when (supermaven--process-running-p)
     (supermaven--stop-process))
-  
+
   (condition-case err
       (progn
         (supermaven--ensure-binary)
@@ -59,7 +59,7 @@
           (with-current-buffer process-buffer
             (erase-buffer)
             (setq buffer-read-only t))
-          
+
           (setq supermaven--process
                 (make-process
                  :name "supermaven"
@@ -68,7 +68,7 @@
                  :filter #'supermaven--process-filter
                  :sentinel #'supermaven--process-sentinel
                  :noquery t))
-          
+
           (setq supermaven--retry-count 0)
           (supermaven--send-greeting)
           (supermaven-log-info "Supermaven process started successfully")))
@@ -85,7 +85,7 @@
     (delete-process supermaven--process)
     (setq supermaven--process nil
           supermaven--message-queue nil)
-    (when-let ((buf (get-buffer supermaven--process-buffer)))
+    (when-let* ((buf (get-buffer supermaven--process-buffer)))
       (kill-buffer buf))))
 
 (defun supermaven--send-message (message)
@@ -126,8 +126,8 @@
           (condition-case err
               (supermaven--handle-message msg-text)
             (error
-             (supermaven-log-error 
-              (format "Error processing message: %s\nMessage: %s" 
+             (supermaven-log-error
+              (format "Error processing message: %s\nMessage: %s"
                       err msg-text)))))))))
 
 (defun supermaven--process-sentinel (proc event)
@@ -152,7 +152,8 @@
       ("activation_request" (supermaven--handle-activation-request message))
       ("activation_success" (supermaven--handle-activation-success))
       ("service_tier" (supermaven--handle-service-tier message))
-      (_ (supermaven-log-debug 
+      ("error" (supermaven--handle-error message))
+      (_ (supermaven-log-debug
           (format "Unknown message kind: %s" (gethash "kind" message)))))))
 
 (defun supermaven--handle-response (message)
@@ -163,25 +164,33 @@
 
 (defun supermaven--handle-metadata (message)
   "Handle metadata MESSAGE from Supermaven."
-  (when-let ((dust-strings (gethash "dustStrings" message)))
+  (when-let* ((dust-strings (gethash "dustStrings" message)))
     (setq supermaven-dust-strings dust-strings)))
 
 (defun supermaven--handle-activation-request (message)
   "Handle activation request MESSAGE from Supermaven."
-  (let ((url (gethash "activateUrl" message)))
+  (let ((url (gethash "url" message)))
     (setq supermaven-activate-url url)
-    (supermaven-log-info 
-     (format "Visit %s to activate Supermaven Pro" url))))
+    (supermaven-log-info "Activation required. Use M-x supermaven-use-pro to activate.")
+    (when (y-or-n-p "Supermaven Pro activation required. Open activation page now? ")
+      (browse-url url))))
 
 (defun supermaven--handle-activation-success ()
-  "Handle activation success from Supermaven."
-  (setq supermaven-activate-url nil)
-  (supermaven-log-info "Supermaven was activated successfully."))
+  "Handle successful activation."
+  (supermaven-log-info "Supermaven Pro activated successfully!")
+  (message "Supermaven Pro activated successfully!"))
 
 (defun supermaven--handle-service-tier (message)
-  "Handle service tier MESSAGE from Supermaven."
-  (when-let ((display (gethash "display" message)))
-    (supermaven-log-info (format "Supermaven %s is running." display))))
+  "Handle service tier MESSAGE."
+  (let ((tier (gethash "tier" message)))
+    (supermaven-log-info (format "Supermaven service tier: %s" tier))
+    (message "Supermaven service tier: %s" tier)))
+
+(defun supermaven--handle-error (message)
+  "Handle error MESSAGE from Supermaven."
+  (let ((error-msg (gethash "error" message)))
+    (supermaven-log-error (format "Supermaven error: %s" error-msg))
+    (message "Supermaven error: %s" error-msg)))
 
 ;; Document handling
 (defun supermaven--document-changed (path content)
@@ -203,31 +212,33 @@
 
 (defun supermaven--submit-state-update ()
   "Submit pending document updates to Supermaven."
-  (let (updates)
-    (maphash (lambda (_path doc)
-               (push (list :kind "file_update"
-                          :path (plist-get doc :path)
-                          :content (plist-get doc :content))
-                     updates))
-             supermaven--changed-documents)
-    (clrhash supermaven--changed-documents)
-    (when updates
-      (supermaven--send-message
-       (list :kind "state_update"
-             :newId (number-to-string supermaven--current-state-id)
-             :updates updates)))))
+  (when supermaven--state-manager
+    (let ((updates (supermaven-state-get-changes supermaven--state-manager)))
+      (when updates
+        (supermaven--send-message
+         (list :kind "state_update"
+               :newId (number-to-string supermaven--current-state-id)
+               :updates updates))))))
 
 (defun supermaven--update-completion-state (state-id items)
   "Update completion state with STATE-ID and ITEMS."
-  (when-let ((state (gethash state-id supermaven--state-map)))
-    (setf (plist-get state :completion)
-          (append (plist-get state :completion) items))
+  (when (and supermaven--state-manager items)
+    (supermaven-state-update supermaven--state-manager state-id items)
+    (when-let ((completion-text (gethash "text" (car items))))
+      (supermaven-state-update-completion
+       supermaven--state-manager state-id completion-text))
     (supermaven--process-completion items)))
 
+(defun supermaven--process-completion (items)
+  "Process completion ITEMS and update UI."
+  (when items
+    (let ((completion-text (gethash "text" (car items))))
+      (when (and completion-text (not (string-empty-p completion-text)))
+        (run-with-idle-timer 0 nil #'supermaven--update-completion)))))
+
 (defun supermaven--initialize-process-manager ()
-  "Initialize the process management system."
-  (setq supermaven--process nil
-        supermaven--message-queue nil
+  "Initialize the Supermaven process manager."
+  (setq supermaven--message-queue nil
         supermaven--changed-documents (make-hash-table :test 'equal)
         supermaven--retry-count 0
         supermaven--last-message-time 0))

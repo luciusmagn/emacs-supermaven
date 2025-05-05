@@ -126,27 +126,63 @@
   (clrhash supermaven--completion-cache))
 
 ;; Interactive commands
-(defun supermaven-accept-completion ()
-  "Accept current completion."
-  (interactive)
-  (when-let* ((ov supermaven--current-overlay)
-              (text (overlay-get ov 'after-string)))
-    (supermaven--clear-completion)
-    (insert text)))
+(defun supermaven--update-completion-overlay (text)
+  "Update the completion overlay with TEXT."
+  (when (and text (not (string-empty-p text)))
+    (if supermaven--current-overlay
+        (overlay-put supermaven--current-overlay 'after-string
+                     (propertize text 'face supermaven-suggestion-face))
+      (supermaven--display-completion text))))
 
-(defun supermaven-accept-word ()
-  "Accept next word of completion."
+(defun supermaven-accept-completion ()
+  "Accept the current completion suggestion."
   (interactive)
-  (when-let* ((ov supermaven--current-overlay)
-              (text (overlay-get ov 'after-string))
-              (word (supermaven--to-next-word text)))
-    (supermaven--clear-completion)
-    (insert word)))
+  (when-let* ((completion (supermaven--get-completion-text)))
+    (when (and completion (not (string-empty-p completion)))
+      (insert completion)
+      (supermaven--clear-completion))))
 
 (defun supermaven-clear-completion ()
-  "Clear current completion."
+  "Clear the current completion suggestion."
   (interactive)
   (supermaven--clear-completion))
+
+(defun supermaven-accept-word ()
+  "Accept the next word of the current completion suggestion."
+  (interactive)
+  (when-let* ((completion (supermaven--get-completion-text)))
+    (when (and completion (not (string-empty-p completion)))
+      (let ((word (supermaven--to-next-word completion)))
+        (when (and word (not (string-empty-p word)))
+          (insert word)
+          (supermaven--clear-completion))))))
+
+(defun supermaven--get-completion-text ()
+  "Get the current completion text."
+  (when supermaven--current-overlay
+    (let ((after-string (overlay-get supermaven--current-overlay 'after-string)))
+      (when after-string
+        (substring-no-properties after-string)))))
+
+(defun supermaven-completion-at-point ()
+  "Supermaven completion at point function for `completion-at-point-functions'."
+  (when (and supermaven-mode
+             (not supermaven-disable-inline-completion)
+             (supermaven--process-running-p))
+    (let ((bounds (supermaven--completion-bounds)))
+      (list (car bounds) (cdr bounds)
+            (lambda (_string pred action)
+              (if (eq action 'metadata)
+                  '(metadata (category . supermaven))
+                (complete-with-action
+                 action
+                 (when-let ((completion (supermaven--get-completion-text)))
+                   (list completion))
+                 _string pred)))
+            :exclusive 'no
+            :company-kind (lambda (_) 'text)
+            :company-doc-buffer (lambda (_) nil)
+            :company-docsig (lambda (_) "Supermaven completion")))))
 
 ;; Company backend
 (defun company-supermaven (command &optional arg &rest _ignored)
@@ -190,6 +226,15 @@
              (eq buffer (current-buffer)))
     (supermaven--update-completion)))
 
+(defun supermaven--update-completion ()
+  "Update completion based on current state."
+  (when (and supermaven-mode
+             (not supermaven-disable-inline-completion))
+    (let* ((state-id (number-to-string supermaven--current-state-id))
+           (completion (supermaven-state-get-completion supermaven--state-manager state-id)))
+      (when completion
+        (supermaven--update-completion-overlay completion)))))
+
 
 ;; Cleanup
 (defun supermaven--cleanup-completion ()
@@ -197,6 +242,11 @@
   (supermaven--clear-completion)
   (supermaven--clear-completion-cache)
   (setq supermaven--last-prefix nil))
+
+(defun supermaven--clear-overlays ()
+  "Clear all Supermaven overlays in the current buffer."
+  (supermaven--clear-completion)
+  (remove-overlays (point-min) (point-max) 'supermaven t))
 
 (provide 'supermaven-completion)
 
