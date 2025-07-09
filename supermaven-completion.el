@@ -200,41 +200,57 @@
 
 (defvar supermaven--completion-request-buffer nil
   "Buffer that requested the current completion.")
+
 (defvar supermaven--active-state-id nil
   "The state ID we're actively waiting for completion.")
+
+(defvar supermaven--last-completion-time 0
+  "Time of last completion request.")
+
+(defvar supermaven--min-completion-interval 1.0
+  "Minimum seconds between completion requests.")
+
+(defun supermaven--at-completion-point-p ()
+  "Check if we're at a valid completion point."
+  (or (eobp)  ; End of buffer is valid
+      (not (and (looking-at-p "\\w")  ; Current char is word
+                (save-excursion
+                  (ignore-errors
+                    (backward-char)
+                    (looking-at-p "\\w")))))))  ; Previous char is word
 
 (defun supermaven--request-completion-at-point ()
   "Gather context at point and send a state_update with cursor info to the agent."
   (let* ((file-path (buffer-file-name))
-         (content (buffer-string))
-         (cursor-offset (point)))
+         (content (supermaven--sanitize-content (buffer-string)))
+         ;; Clamp to valid range
+         (cursor-offset (min (1- (point)) (1- (length content))))
+         (now (float-time)))
 
-    (when file-path
-      ;; Remember which buffer requested this
+    (when (and file-path
+               (supermaven--at-completion-point-p)  ; <- Add check
+               (> (- now supermaven--last-completion-time)
+                  supermaven--min-completion-interval))
+      (setq supermaven--last-completion-time now)
       (setq supermaven--completion-request-buffer (current-buffer))
-
-      ;; Clear old completion
       (supermaven--clear-completion)
-
-      ;; Clear any pending accumulations for old states
       (clrhash supermaven--completion-accumulator)
-
-      ;; Increment state ID
       (cl-incf supermaven--current-state-id)
       (setq supermaven--active-state-id supermaven--current-state-id)
 
       (supermaven-log-info (format "Requesting completion for state %d at offset %d in buffer %s"
                                    supermaven--current-state-id cursor-offset (buffer-name)))
 
-      (let* ((cursor-update `((kind . "cursor_update")
-                              (path . ,file-path)
-                              (offset . ,cursor-offset)))
-             (file-update `((kind . "file_update")
+      ;; Send file update first
+      (let* ((file-update `((kind . "file_update")
                             (path . ,file-path)
                             (content . ,content)))
+             (cursor-update `((kind . "cursor_update")
+                              (path . ,file-path)
+                              (offset . ,cursor-offset)))
              (payload `((kind . "state_update")
                         (newId . ,(number-to-string supermaven--current-state-id))
-                        (updates . [,cursor-update ,file-update]))))
+                        (updates . [,file-update ,cursor-update]))))  ; <- File first!
 
         (supermaven--send-message payload)))))
 
