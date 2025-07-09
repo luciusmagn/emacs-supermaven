@@ -112,13 +112,7 @@
   (when (and supermaven-mode
              (supermaven--process-running-p)
              (not (supermaven--should-ignore-buffer)))
-    ;; Schedule both update and completion
-    (let ((change (list :begin beg
-                        :end end
-                        :length len
-                        :text (buffer-substring-no-properties beg end)
-                        :time (float-time))))
-      (supermaven--schedule-update change))
+    ;; Only schedule completion, not update
     (supermaven--schedule-completion)))
 
 ;; Hooks
