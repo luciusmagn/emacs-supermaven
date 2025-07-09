@@ -214,6 +214,17 @@
         supermaven-show-log
         supermaven-clear-log))
 
+(defun supermaven--on-post-command ()
+  "Handle post-command hook."
+  (when (and supermaven-mode
+             (not supermaven-disable-inline-completion)
+             (supermaven--process-running-p)
+             ;; Only trigger on actual cursor movement
+             (not (memq this-command '(self-insert-command
+                                       supermaven-accept-completion
+                                       supermaven-clear-completion))))
+    (supermaven--schedule-completion)))
+
 (defun supermaven-test-overlay ()
   "Test overlay creation."
   (interactive)

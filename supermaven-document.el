@@ -67,18 +67,6 @@
         (supermaven--submit-state-update)
         (setq supermaven--last-change nil)))))
 
-(defun supermaven--track-change (beg end len)
-  "Track change between BEG and END with length LEN."
-  (when (and supermaven-mode
-             (supermaven--process-running-p)
-             (not (supermaven--should-ignore-buffer)))
-    (let ((change (list :begin beg
-                        :end end
-                        :length len
-                        :text (buffer-substring-no-properties beg end)
-                        :time (float-time))))
-      (supermaven--schedule-update change))))
-
 (defun supermaven--should-ignore-buffer ()
   "Check if current buffer should be ignored."
   (or (not (buffer-file-name))
@@ -86,14 +74,59 @@
       (and supermaven-condition
            (funcall supermaven-condition))))
 
+(defvar-local supermaven--completion-timer nil
+  "Timer for triggering completion.")
+
+(defvar supermaven--completion-delay 0.5
+  "Delay before triggering completion.")
+
+(defun supermaven--schedule-completion ()
+  "Schedule a completion request after idle time."
+  (when supermaven--completion-timer
+    (cancel-timer supermaven--completion-timer))
+  ;; Only schedule if we're not already waiting for a completion
+  (unless supermaven--active-state-id
+    (setq supermaven--completion-timer
+          (run-with-idle-timer supermaven--completion-delay nil
+                               #'supermaven--trigger-completion
+                               (current-buffer)))))
+
+(defun supermaven--trigger-completion (buffer)
+  "Trigger completion in BUFFER."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (and supermaven-mode
+                 (not supermaven-disable-inline-completion)
+                 (supermaven--process-running-p)
+                 ;; Only trigger if not already waiting
+                 (not supermaven--active-state-id))
+        (supermaven--request-completion-at-point)))))
+
+(defun supermaven--track-change (beg end len)
+  "Track change between BEG and END with length LEN."
+  (when (and supermaven-mode
+             (supermaven--process-running-p)
+             (not (supermaven--should-ignore-buffer)))
+    ;; Schedule both update and completion
+    (let ((change (list :begin beg
+                        :end end
+                        :length len
+                        :text (buffer-substring-no-properties beg end)
+                        :time (float-time))))
+      (supermaven--schedule-update change))
+    (supermaven--schedule-completion)))
+
 ;; Hooks
 (defun supermaven--setup-document-hooks ()
   "Set up document change hooks."
-  (add-hook 'after-change-functions #'supermaven--track-change nil t))
+  (add-hook 'after-change-functions #'supermaven--track-change nil t)
+  (add-hook 'post-command-hook #'supermaven--on-post-command nil t))
 
 (defun supermaven--cleanup-document-hooks ()
   "Remove document change hooks."
-  (remove-hook 'after-change-functions #'supermaven--track-change t))
+  (remove-hook 'after-change-functions #'supermaven--track-change t)
+  (remove-hook 'post-command-hook #'supermaven--on-post-command t))
+
 
 (provide 'supermaven-document)
 
