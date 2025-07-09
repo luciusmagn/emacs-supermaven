@@ -64,6 +64,7 @@
                    :name "supermaven"
                    :buffer process-buffer
                    :command (list supermaven-binary-path "stdio")
+                   :connection-type 'pipe
                    :filter #'supermaven--process-filter
                    :sentinel #'supermaven--process-sentinel
                    :noquery t)))
