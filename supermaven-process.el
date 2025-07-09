@@ -106,6 +106,7 @@
 
 (defun supermaven--process-filter (proc string)
   "Process filter for STRING from PROC."
+  (supermaven-log-info (format "DEBUG: %s" string))
   (with-current-buffer (process-buffer proc)
     (let ((inhibit-read-only t))
       ;; Accumulate the string
@@ -162,15 +163,12 @@
   "Handle response MESSAGE from Supermaven."
   (let ((state-id (gethash "stateId" message))
         (items (gethash "items" message)))
-    ;; Process if this is for the active state
     (when (and state-id
                items
                supermaven--active-state-id
                (string= state-id (number-to-string supermaven--active-state-id)))
-      ;; Get or create accumulator for this state
-      (let ((current-text (or (gethash state-id supermaven--completion-accumulator) "")))
 
-        ;; Process each item
+      (let ((current-text (or (gethash state-id supermaven--completion-accumulator) "")))
         (dolist (item items)
           (let ((kind (gethash "kind" item)))
             (cond
@@ -179,25 +177,25 @@
                 (setq current-text (concat current-text text))))
 
              ((string= kind "barrier")
-              ;; Barrier - ignore
-              nil)
+              ;; Barrier marks end of one completion alternative
+              ;; Show what we have so far and stop processing
+              (when (not (string-empty-p current-text))
+                (supermaven--update-completion-overlay current-text)
+                (puthash state-id current-text supermaven--completion-accumulator)
+                (setq supermaven--active-state-id nil))
+              (return))  ; Stop processing more items after barrier
 
              ((string= kind "finish_edit")
-              ;; Completion is done, show it
               (supermaven--update-completion-overlay current-text)
-              ;; Clear accumulator
               (remhash state-id supermaven--completion-accumulator)
-              ;; Clear active state since we're done
               (setq supermaven--active-state-id nil)
               (setq current-text nil))
 
              ((string= kind "end")
-              ;; End without showing
               (remhash state-id supermaven--completion-accumulator)
               (setq supermaven--active-state-id nil)
               (setq current-text nil)))))
 
-        ;; Update accumulator if not finished
         (when current-text
           (puthash state-id current-text supermaven--completion-accumulator))))))
 

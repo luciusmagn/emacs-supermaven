@@ -102,7 +102,9 @@
     (setq supermaven-binary-path binary-path)
     binary-path))
 
-(defun supermaven--check-binary-version ()
+
+;; Disabled due to being obviously wrong
+(defun supermaven--check-binary-version-bak ()
   "Check if the binary version needs updating."
   (when (file-exists-p supermaven-binary-path)
     (condition-case err
@@ -121,15 +123,20 @@
   (let ((binary-path (supermaven--get-binary-path)))
     (when (or (not (file-exists-p binary-path))
               (not (file-executable-p binary-path))
-              (not supermaven-binary-path)
-              (not (supermaven--check-binary-version)))
+              (not binary-path))
+                                        ; (not (supermaven--check-binary-version)))
       (condition-case err
           (progn
+            (supermaven-log-info "Try to download binary")
+            (supermaven-log-info (format "%s" (file-exists-p binary-path)))
+            (supermaven-log-info (format "%s" (file-executable-p binary-path)))
+            (supermaven-log-info (format "%s" binary-path))
             (supermaven--fetch-binary)
             (supermaven-log-info (format "Successfully installed Supermaven binary to %s" binary-path)))
         (error
          (supermaven-log-error (format "Failed to fetch Supermaven binary: %s" (error-message-string err)))
-         (signal (car err) (cdr err)))))))
+         (signal (car err) (cdr err)))))
+    (setq supermaven-binary-path binary-path)))
 
 (provide 'supermaven-binary)
 
