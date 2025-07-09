@@ -95,10 +95,11 @@
       (when (> (- now supermaven--last-message-time) supermaven--message-delay)
         (setq supermaven--last-message-time now)
         (supermaven-log-info (format "Sending: %s" message))
+        (supermaven-log-info (format "As JSON: %s" (json-encode message)))
         (condition-case err
             (process-send-string
              supermaven--process
-             (concat (json-encode message) "\n"))
+             (concat (supermaven--sanitize-content (json-encode message)) "\n"))
           (error
            (supermaven-log-error (format "Failed to send message: %s" err))))))))
 
