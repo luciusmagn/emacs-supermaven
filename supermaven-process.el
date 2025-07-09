@@ -95,6 +95,7 @@
     (let ((now (float-time)))
       (when (> (- now supermaven--last-message-time) supermaven--message-delay)
         (setq supermaven--last-message-time now)
+        (supermaven-log-info (format "Sending: %s" message))
         (condition-case err
             (process-send-string
              supermaven--process
@@ -209,7 +210,7 @@
   "Send initial greeting to Supermaven."
   (supermaven--send-message
    (list :kind "greeting"
-         :allowGitignore :false)))
+         :allowGitignore :json-false)))
 
 (defun supermaven--submit-state-update ()
   "Submit pending document updates to Supermaven."
