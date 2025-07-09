@@ -15,10 +15,13 @@
   "Log MESSAGE at LEVEL."
   (when (>= (supermaven--log-level-to-number supermaven-log-level)
             (supermaven--log-level-to-number level))
-    (with-current-buffer (get-buffer-create supermaven-log-buffer-name)
-      (goto-char (point-max))
-      (insert (format-time-string "[%Y-%m-%d %H:%M:%S] "))
-      (insert (format "[%s] %s\n" (upcase (symbol-name level)) message)))))
+    ;; make the logging atomic
+    (save-current-buffer
+      (with-current-buffer (get-buffer-create supermaven-log-buffer-name)
+        (let ((inhibit-read-only t))
+          (goto-char (point-max))
+          (insert (format-time-string "[%Y-%m-%d %H:%M:%S] "))
+          (insert (format "[%s] %s\n" (upcase (symbol-name level)) message)))))))
 
 (defun supermaven-log-trace (message)
   "Log MESSAGE at TRACE level."
