@@ -61,11 +61,11 @@
          (version (supermaven--get-binary-version))
          (binary-name (if (eq system-type 'windows-nt) "sm-agent.exe" "sm-agent"))
          (data-home (or (getenv "XDG_DATA_HOME")
-                       (expand-file-name ".local/share" (getenv "HOME"))))
+                        (expand-file-name ".local/share" (getenv "HOME"))))
          (binary-dir (expand-file-name
-                     (format "supermaven/binary/%s/%s-%s"
-                             version platform arch)
-                     data-home)))
+                      (format "supermaven/binary/%s/%s-%s"
+                              version platform arch)
+                      data-home)))
     (expand-file-name binary-name binary-dir)))
 
 (defun supermaven--construct-download-url ()
@@ -93,8 +93,8 @@
          (url (supermaven--construct-download-url)))
 
     (supermaven-log-info (format "Determined system: %s-%s"
-                                (supermaven--determine-platform)
-                                (supermaven--determine-arch)))
+                                 (supermaven--determine-platform)
+                                 (supermaven--determine-arch)))
 
     ;; For development purposes, we'll create a mock binary
     (supermaven-log-info "Creating mock binary for development")

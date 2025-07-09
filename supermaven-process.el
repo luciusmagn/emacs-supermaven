@@ -71,12 +71,12 @@
 
           (setq supermaven--retry-count 0)
           (supermaven--send-greeting)
-          (supermaven-log-info "Supermaven process started successfully")))
-    (error
-     (supermaven-log-error (format "Failed to start Supermaven: %s" err))
-     (when (< supermaven--retry-count supermaven--max-retries)
-       (cl-incf supermaven--retry-count)
-       (run-with-timer 2 nil #'supermaven--start-process)))))
+          (supermaven-log-info "Supermaven process started successfully"))
+      (error
+       (supermaven-log-error (format "Failed to start Supermaven: %s" err))
+       (when (< supermaven--retry-count supermaven--max-retries)
+         (cl-incf supermaven--retry-count)
+         (run-with-timer 2 nil #'supermaven--start-process))))))
 
 (defun supermaven--stop-process ()
   "Stop the Supermaven process."
