@@ -214,6 +214,14 @@
         supermaven-show-log
         supermaven-clear-log))
 
+(defun supermaven-test-overlay ()
+  "Test overlay creation."
+  (interactive)
+  (let ((ov (make-overlay (point) (point) nil nil t)))
+    (overlay-put ov 'after-string (propertize " TEST OVERLAY" 'face 'error))
+    (overlay-put ov 'priority 100)
+    (supermaven-log-info (format "Created test overlay at point %d" (point)))))
+
 (provide 'supermaven)
 
 ;;; supermaven.el ends here
