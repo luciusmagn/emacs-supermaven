@@ -57,7 +57,7 @@
   "Send document update to Supermaven."
   (when-let* ((file-name (buffer-file-name))
               (content (buffer-substring-no-properties
-                       (point-min) (point-max))))
+                        (point-min) (point-max))))
     (when (< (length content) supermaven--hard-size-limit)
       (when supermaven--state-manager
         (supermaven-state-record-buffer-change
