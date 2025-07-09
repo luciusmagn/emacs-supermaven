@@ -101,34 +101,31 @@
           (error
            (supermaven-log-error (format "Failed to send message: %s" err))))))))
 
-(defun supermaven--process-filter (proc output)
-  "Process filter for OUTPUT from PROC."
-  (when (buffer-live-p (process-buffer proc))
-    (with-current-buffer (process-buffer proc)
-      (let ((inhibit-read-only t)
-            (moving (= (point) (process-mark proc))))
-        (save-excursion
-          (goto-char (process-mark proc))
-          (insert output)
-          (set-marker (process-mark proc) (point)))
-        (when moving
-          (goto-char (process-mark proc))))
-      (supermaven--process-pending-messages))))
+(defvar-local supermaven--process-buffer-content ""
+  "Accumulated process output buffer.")
 
-(defun supermaven--process-pending-messages ()
-  "Process any complete messages in the process buffer."
-  (with-current-buffer supermaven--process-buffer
+(defun supermaven--process-filter (proc string)
+  "Process filter for STRING from PROC."
+  (with-current-buffer (process-buffer proc)
     (let ((inhibit-read-only t))
-      (goto-char (point-min))
-      (while (re-search-forward "^SM-MESSAGE \\(.+\\)\n" nil t)
-        (let ((msg-text (match-string 1)))
-          (delete-region (match-beginning 0) (match-end 0))
-          (condition-case err
-              (supermaven--handle-message msg-text)
-            (error
-             (supermaven-log-error
-              (format "Error processing message: %s\nMessage: %s"
-                      err msg-text)))))))))
+      ;; Accumulate the string
+      (setq supermaven--process-buffer-content
+            (concat supermaven--process-buffer-content string))
+
+      ;; Process complete lines
+      (while (string-match "^SM-MESSAGE \\(.+\\)$" supermaven--process-buffer-content)
+        (let ((json-text (match-string 1 supermaven--process-buffer-content)))
+          (supermaven-log-info (format "AGENT-RESPONSE: %s" json-text))
+          (supermaven--handle-message json-text))
+
+        ;; Remove the processed line
+        (setq supermaven--process-buffer-content
+              (substring supermaven--process-buffer-content (match-end 0)))
+
+        ;; Remove leading newline if present
+        (when (string-prefix-p "\n" supermaven--process-buffer-content)
+          (setq supermaven--process-buffer-content
+                (substring supermaven--process-buffer-content 1)))))))
 
 (defun supermaven--process-sentinel (proc event)
   "Handle process state changes for PROC with EVENT."
