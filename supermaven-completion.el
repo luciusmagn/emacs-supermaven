@@ -18,9 +18,6 @@
 (defconst supermaven--completion-chunk-size 1000
   "Maximum size of text to process in one chunk.")
 
-(defvar-local supermaven--polling-timer nil
-  "Timer for polling completion updates.")
-
 (defvar-local supermaven--last-prefix nil
   "Last completion prefix.")
 
