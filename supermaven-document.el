@@ -82,7 +82,7 @@
 (defvar-local supermaven--completion-timer nil
   "Timer for triggering completion.")
 
-(defvar supermaven--completion-delay 0.5
+(defvar supermaven--completion-delay 1.0
   "Delay before triggering completion.")
 
 (defun supermaven--schedule-completion ()
