@@ -225,6 +225,19 @@
                                        supermaven-clear-completion))))
     (supermaven--schedule-completion)))
 
+(defun supermaven-debug-info ()
+  "Show debug information."
+  (interactive)
+  (message "Overlay: %S, Current state: %s, Accumulator: %S"
+           supermaven--current-overlay
+           supermaven--current-state-id
+           (hash-table-keys supermaven--completion-accumulator))
+  (when supermaven--current-overlay
+    (message "Overlay properties: start=%d end=%d after-string=%S"
+             (overlay-start supermaven--current-overlay)
+             (overlay-end supermaven--current-overlay)
+             (overlay-get supermaven--current-overlay 'after-string))))
+
 (defun supermaven-test-overlay ()
   "Test overlay creation."
   (interactive)
