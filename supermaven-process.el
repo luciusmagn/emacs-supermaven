@@ -6,6 +6,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'json)
 (require 'supermaven-binary)
 (require 'supermaven-completion)
