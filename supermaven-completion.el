@@ -193,38 +193,14 @@
     (prefix (and supermaven-mode
                  (not (company-in-string-or-comment))
                  (not (supermaven--should-ignore-buffer))
-                 (let ((bounds (supermaven--completion-bounds)))
-                   (buffer-substring-no-properties (car bounds) (point)))))
+                 ;; Just return empty string to allow triggering
+                 ""))
     (candidates
-     (when-let ((completion (supermaven--get-completion-text)))
-       (list completion)))
-    (sorted t)
-    (kind 'text)
-    (annotation "<Supermaven>")
-    (no-cache t)
-    (require-match 'never)
-    (duplicates nil)
-    (meta "AI-powered completion")))
-
-(defun supermaven--poll-completions ()
-  "Poll for completion updates."
-  (when supermaven--polling-timer
-    (cancel-timer supermaven--polling-timer))
-  (setq supermaven--polling-timer
-        (run-with-timer 0 0.025 #'supermaven--poll-once
-                        (current-buffer))))
-
-(defun supermaven--stop-polling ()
-  "Stop polling for completions."
-  (when supermaven--polling-timer
-    (cancel-timer supermaven--polling-timer)
-    (setq supermaven--polling-timer nil)))
-
-(defun supermaven--poll-once (buffer)
-  "Poll once for completions in BUFFER."
-  (when (and (buffer-live-p buffer)
-             (eq buffer (current-buffer)))
-    (supermaven--update-completion)))
+     ;; Request completion but return empty list
+     ;; The completion will appear as an overlay
+     (supermaven--request-completion-at-point)
+     nil)
+    (no-cache t)))
 
 (defun supermaven--update-completion ()
   "Update completion based on current state."
