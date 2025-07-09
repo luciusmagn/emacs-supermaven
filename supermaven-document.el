@@ -53,11 +53,16 @@
       (when supermaven--last-change
         (supermaven--send-update)))))
 
+(defun supermaven--sanitize-content (content)
+  "Remove control characters from CONTENT, preserving newlines and tabs."
+  (replace-regexp-in-string "[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]" "" content))
+
 (defun supermaven--send-update ()
   "Send document update to Supermaven."
   (when-let* ((file-name (buffer-file-name))
-              (content (buffer-substring-no-properties
-                        (point-min) (point-max))))
+              (content (supermaven--sanitize-content
+                        (buffer-substring-no-properties
+                         (point-min) (point-max)))))
     (when (< (length content) supermaven--hard-size-limit)
       (when supermaven--state-manager
         (supermaven-state-record-buffer-change
