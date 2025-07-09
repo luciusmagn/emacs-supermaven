@@ -96,20 +96,9 @@
                                  (supermaven--determine-platform)
                                  (supermaven--determine-arch)))
 
-    ;; For development purposes, we'll create a mock binary
-    (supermaven-log-info "Creating mock binary for development")
-    (make-directory (file-name-directory binary-path) t)
+    (supermaven-log-info (format "Downloading binary from %s to %s" url binary-path))
+    (supermaven--download-binary url binary-path)
 
-    ;; Create a simple shell script as the binary
-    (with-temp-file binary-path
-      (insert "#!/bin/sh\n")
-      (insert "echo '{\"kind\": \"metadata\", \"dustStrings\": [\"test\"]}'\n")
-      (insert "while read line; do\n")
-      (insert "  echo \"SM-MESSAGE {\\\"kind\\\": \\\"response\\\", \\\"stateId\\\": \\\"1\\\", \\\"items\\\": [{\\\"kind\\\": \\\"completion\\\", \\\"text\\\": \\\"Hello World\\\"}]}\"\n")
-      (insert "done\n"))
-
-    ;; Make it executable
-    (set-file-modes binary-path #o755)
     (setq supermaven-binary-path binary-path)
     binary-path))
 
@@ -131,6 +120,7 @@
   "Ensure the Supermaven binary is available and up to date."
   (let ((binary-path (supermaven--get-binary-path)))
     (when (or (not (file-exists-p binary-path))
+              (not (file-executable-p binary-path))
               (not supermaven-binary-path)
               (not (supermaven--check-binary-version)))
       (condition-case err
