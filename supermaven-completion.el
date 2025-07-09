@@ -79,12 +79,12 @@
          (line-before (substring line 0 (- pos (line-beginning-position))))
          (line-after (substring line (- pos (line-beginning-position)))))
     (make-instance 'supermaven-completion-context
-                  :buffer buf
-                  :prefix (buffer-substring-no-properties prefix-start pos)
-                  :point pos
-                  :line-before line-before
-                  :line-after line-after
-                  :bounds bounds)))
+                   :buffer buf
+                   :prefix (buffer-substring-no-properties prefix-start pos)
+                   :point pos
+                   :line-before line-before
+                   :line-after line-after
+                   :bounds bounds)))
 
 (defun supermaven--completion-bounds ()
   "Get bounds of thing to complete."
@@ -102,9 +102,9 @@
       (overlay-put ov 'supermaven t)
       (overlay-put ov 'after-string
                    (propertize (if after
-                                  (concat text after)
-                                text)
-                              'face 'shadow))
+                                   (concat text after)
+                                 text)
+                               'face 'shadow))
       (setq supermaven--current-overlay ov))))
 
 (defun supermaven--clear-completion ()
@@ -212,7 +212,7 @@
     (cancel-timer supermaven--polling-timer))
   (setq supermaven--polling-timer
         (run-with-timer 0 0.025 #'supermaven--poll-once
-                       (current-buffer))))
+                        (current-buffer))))
 
 (defun supermaven--stop-polling ()
   "Stop polling for completions."
