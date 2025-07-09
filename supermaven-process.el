@@ -50,25 +50,23 @@
 
 (defun supermaven--start-process ()
   "Start the Supermaven process."
-  (when (supermaven--process-running-p)
-    (supermaven--stop-process))
+  (if (supermaven--process-running-p)
+      (supermaven-log-info "Start aborted: process is already running.")
+    (condition-case err
+        (progn
+          (let ((process-buffer (get-buffer-create supermaven--process-buffer)))
+            (with-current-buffer process-buffer
+              (erase-buffer)
+              (setq buffer-read-only nil))
 
-  (condition-case err
-      (progn
-        (supermaven--ensure-binary)
-        (let ((process-buffer (get-buffer-create supermaven--process-buffer)))
-          (with-current-buffer process-buffer
-            (erase-buffer)
-            (setq buffer-read-only t))
-
-          (setq supermaven--process
-                (make-process
-                 :name "supermaven"
-                 :buffer process-buffer
-                 :command (list supermaven-binary-path "stdio")
-                 :filter #'supermaven--process-filter
-                 :sentinel #'supermaven--process-sentinel
-                 :noquery t))
+            (setq supermaven--process
+                  (make-process
+                   :name "supermaven"
+                   :buffer process-buffer
+                   :command (list supermaven-binary-path "stdio")
+                   :filter #'supermaven--process-filter
+                   :sentinel #'supermaven--process-sentinel
+                   :noquery t)))
 
           (setq supermaven--retry-count 0)
           (supermaven--send-greeting)
