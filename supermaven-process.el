@@ -155,11 +155,51 @@
       (_ (supermaven-log-debug
           (format "Unknown message kind: %s" (gethash "kind" message)))))))
 
+(defvar supermaven--completion-accumulator (make-hash-table :test 'equal)
+  "Accumulator for completion responses by state ID.")
+
 (defun supermaven--handle-response (message)
   "Handle response MESSAGE from Supermaven."
   (let ((state-id (gethash "stateId" message))
         (items (gethash "items" message)))
-    (supermaven--update-completion-state state-id items)))
+    ;; Process if this is for the active state
+    (when (and state-id
+               items
+               supermaven--active-state-id
+               (string= state-id (number-to-string supermaven--active-state-id)))
+      ;; Get or create accumulator for this state
+      (let ((current-text (or (gethash state-id supermaven--completion-accumulator) "")))
+
+        ;; Process each item
+        (dolist (item items)
+          (let ((kind (gethash "kind" item)))
+            (cond
+             ((string= kind "text")
+              (let ((text (gethash "text" item)))
+                (setq current-text (concat current-text text))))
+
+             ((string= kind "barrier")
+              ;; Barrier - ignore
+              nil)
+
+             ((string= kind "finish_edit")
+              ;; Completion is done, show it
+              (supermaven--update-completion-overlay current-text)
+              ;; Clear accumulator
+              (remhash state-id supermaven--completion-accumulator)
+              ;; Clear active state since we're done
+              (setq supermaven--active-state-id nil)
+              (setq current-text nil))
+
+             ((string= kind "end")
+              ;; End without showing
+              (remhash state-id supermaven--completion-accumulator)
+              (setq supermaven--active-state-id nil)
+              (setq current-text nil)))))
+
+        ;; Update accumulator if not finished
+        (when current-text
+          (puthash state-id current-text supermaven--completion-accumulator))))))
 
 (defun supermaven--handle-metadata (message)
   "Handle metadata MESSAGE from Supermaven."

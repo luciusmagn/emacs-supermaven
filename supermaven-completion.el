@@ -125,19 +125,36 @@
 ;; Interactive commands
 (defun supermaven--update-completion-overlay (text)
   "Update the completion overlay with TEXT."
-  (when (and text (not (string-empty-p text)))
-    (if supermaven--current-overlay
-        (overlay-put supermaven--current-overlay 'after-string
-                     (propertize text 'face supermaven-suggestion-face))
-      (supermaven--display-completion text))))
+  (supermaven-log-info (format "Attempting to create overlay with text: %S" text))
+  (when (and text
+             (not (string-empty-p text))
+             supermaven--completion-request-buffer
+             (buffer-live-p supermaven--completion-request-buffer))
+    ;; Switch to the buffer that requested the completion
+    (with-current-buffer supermaven--completion-request-buffer
+      (supermaven--clear-completion)
+      (let* ((pos (point))
+             (ov (make-overlay pos pos nil nil t)))
+        (overlay-put ov 'priority 100)
+        (overlay-put ov 'supermaven t)
+        (overlay-put ov 'after-string
+                     (propertize text 'face 'shadow))
+        (setq supermaven--current-overlay ov)
+        (supermaven-log-info (format "Created overlay at position %d in buffer %s: %S"
+                                     pos (buffer-name) supermaven--current-overlay))))))
 
 (defun supermaven-accept-completion ()
   "Accept the current completion suggestion."
   (interactive)
-  (when-let* ((completion (supermaven--get-completion-text)))
-    (when (and completion (not (string-empty-p completion)))
-      (insert completion)
-      (supermaven--clear-completion))))
+  (when supermaven--current-overlay
+    (let* ((after-string (overlay-get supermaven--current-overlay 'after-string))
+           (completion-text (when after-string
+                              (substring-no-properties after-string))))
+      (when (and completion-text (not (string-empty-p completion-text)))
+        (insert completion-text)
+        (supermaven--clear-completion)
+        ;; Clear the accumulator for this state
+        (clrhash supermaven--completion-accumulator)))))
 
 (defun supermaven-clear-completion ()
   "Clear the current completion suggestion."
@@ -180,6 +197,46 @@
             :company-kind (lambda (_) 'text)
             :company-doc-buffer (lambda (_) nil)
             :company-docsig (lambda (_) "Supermaven completion")))))
+
+(defvar supermaven--completion-request-buffer nil
+  "Buffer that requested the current completion.")
+(defvar supermaven--active-state-id nil
+  "The state ID we're actively waiting for completion.")
+
+(defun supermaven--request-completion-at-point ()
+  "Gather context at point and send a state_update with cursor info to the agent."
+  (let* ((file-path (buffer-file-name))
+         (content (buffer-string))
+         (cursor-offset (point)))
+
+    (when file-path
+      ;; Remember which buffer requested this
+      (setq supermaven--completion-request-buffer (current-buffer))
+
+      ;; Clear old completion
+      (supermaven--clear-completion)
+
+      ;; Clear any pending accumulations for old states
+      (clrhash supermaven--completion-accumulator)
+
+      ;; Increment state ID
+      (cl-incf supermaven--current-state-id)
+      (setq supermaven--active-state-id supermaven--current-state-id)
+
+      (supermaven-log-info (format "Requesting completion for state %d at offset %d in buffer %s"
+                                   supermaven--current-state-id cursor-offset (buffer-name)))
+
+      (let* ((cursor-update `((kind . "cursor_update")
+                              (path . ,file-path)
+                              (offset . ,cursor-offset)))
+             (file-update `((kind . "file_update")
+                            (path . ,file-path)
+                            (content . ,content)))
+             (payload `((kind . "state_update")
+                        (newId . ,(number-to-string supermaven--current-state-id))
+                        (updates . [,cursor-update ,file-update]))))
+
+        (supermaven--send-message payload)))))
 
 ;; Company backend
 (defun company-supermaven (command &optional arg &rest _ignored)
