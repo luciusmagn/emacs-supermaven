@@ -219,10 +219,15 @@
   (when (and supermaven-mode
              (not supermaven-disable-inline-completion)
              (supermaven--process-running-p)
-             ;; Only trigger on actual cursor movement
-             (not (memq this-command '(self-insert-command
-                                       supermaven-accept-completion
-                                       supermaven-clear-completion))))
+             ;; Only on significant commands
+             (memq this-command '(self-insert-command
+                                  delete-char
+                                  delete-backward-char
+                                  backward-delete-char-untabify
+                                  kill-word
+                                  backward-kill-word))
+             ;; Not already waiting
+             (not supermaven--active-state-id))
     (supermaven--schedule-completion)))
 
 (defun supermaven-debug-info ()
