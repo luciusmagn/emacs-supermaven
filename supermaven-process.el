@@ -136,6 +136,7 @@
   "Handle process state changes for PROC with EVENT."
   (supermaven-log-info (format "Supermaven process %s" event))
   (when (memq (process-status proc) '(exit signal))
+    (supermaven-log-info "The supermaven process exit, and will need to be started again")
     (setq supermaven--process nil)
     ;; Attempt restart if appropriate
     (when (and (< supermaven--retry-count supermaven--max-retries)
@@ -145,6 +146,7 @@
 ;; Message handling
 (defun supermaven--handle-message (message-text)
   "Handle a message MESSAGE-TEXT from the Supermaven process."
+  (supermaven-log-info (format "Reiceive message: %s" message-text))
   (let* ((json-object-type 'hash-table)
          (json-array-type 'list)
          (message (json-read-from-string message-text)))
